@@ -5,9 +5,10 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from datetime import datetime, timedelta
 import threading
-import random  # For generating random data (replace this with actual data fetching)
+import random
 import pandas as pd
 from forex_python.converter import CurrencyRates
+from tradingview_ta import TA_Handler, Interval, Exchange
 
 class MyStrategy(bt.Strategy):
     params = (
@@ -37,10 +38,10 @@ class MyStrategy(bt.Strategy):
 
     def next(self):
         if self.data.close[0] > self.sma[0] and self.rsi[0] > 70:
-            self.sell()  # Example sell condition based on SMA and RSI
+            self.sell()
 
         elif self.data.close[0] < self.sma[0] and self.rsi[0] < 30:
-            self.buy()   # Example buy condition based on SMA and RSI
+            self.buy()
 
 
 class BacktestApp:
@@ -75,28 +76,51 @@ class BacktestApp:
         self.currency_rates = tk.Label(root, text="Fetching...")
         self.currency_rates.pack()
 
-        self.figure = plt.figure(figsize=(10, 6))  # Increase figure size for more data points
+        self.figure = plt.figure(figsize=(10, 6))
         self.ax = self.figure.add_subplot(111)
 
         self.canvas = FigureCanvasTkAgg(self.figure, master=root)
         self.canvas.get_tk_widget().pack()
 
-    def fetch_currency_rates(self):
-        c = CurrencyRates()
-        usd_to_eur = c.get_rate('USD', 'EUR')
-        usd_to_gbp = c.get_rate('USD', 'GBP')
-        usd_to_jpy = c.get_rate('USD', 'JPY')
-        self.currency_rates.config(text=f"USD to EUR: {usd_to_eur:.4f}, USD to GBP: {usd_to_gbp:.4f}, USD to JPY: {usd_to_jpy:.4f}")
+    def fetch_tradingview_data(self, symbol, timeframe):
+        interval = None
+        if timeframe == "1 Day":
+            interval = Interval.INTERVAL_1_DAY
+        elif timeframe == "1 Week":
+            interval = Interval.INTERVAL_1_WEEK
+
+        handler = TA_Handler(
+            symbol=symbol,
+            exchange=Exchange.BITFINEX,
+            screener="crypto",
+            interval=interval,
+            timeout=10
+        )
+
+        df = handler.get_pandas()
+        df['datetime'] = df.index
+        return df
+
+    def update_chart(self):
+        selected_period = self.time_period_var.get()
+        symbol = "BTCUSD"
+
+        new_data = self.fetch_tradingview_data(symbol, selected_period)
+
+        self.ax.clear()
+        self.ax.plot(new_data['datetime'], new_data['close'], label="Price")
+        self.ax.legend()
+        self.canvas.draw()
 
     def run_thread(self):
         self.run_button.config(state="disabled")
         self.plot_results(None)
-        self.fetch_currency_rates()  # Fetch currency rates
+        self.fetch_currency_rates()
         self.thread = threading.Thread(target=self.run_backtest)
         self.thread.start()
 
     def run_backtest(self):
-        data = bt.feeds.PandasData(dataname=self.generate_random_data(1500))  # Change the number of data points
+        data = bt.feeds.PandasData(dataname=self.fetch_tradingview_data("BTCUSD", "1 Day"))
 
         cerebro = bt.Cerebro()
         cerebro.adddata(data)
@@ -115,62 +139,16 @@ class BacktestApp:
             self.ax.legend()
         self.canvas.draw()
 
-    def update_chart(self):
-        selected_period = self.time_period_var.get()
-        print(f"Updating chart for period: {selected_period}")
-
-        # Fetch new data based on the selected period (replace this with your data fetching logic)
-        new_data = self.generate_random_data(1500)  # Change the number of data points
-
-        # Clear the existing plot and update with new data
-        self.ax.clear()
-        self.ax.plot(new_data['datetime'], new_data['close'], label="Price")
-        self.ax.legend()
-        self.canvas.draw()
-
-    def generate_random_data(self, num_points):
-        period = self.time_period_var.get()
-        if period == "1 Day":
-            freq = 'D'
-        elif period == "1 Week":
-            freq = 'W'
-        elif period == "1 Month":
-            freq = 'M'
-        elif period == "3 Months":
-            freq = '3M'
-        elif period == "6 Months":
-            freq = '6M'
-        elif period == "1 Year":
-            freq = 'Y'
-        else:
-            freq = 'D'
-
-        start_date = datetime(2020, 1, 1)
-
-        if period == "1 Day":
-            end_date = start_date + timedelta(days=num_points - 1)
-        elif period == "1 Week":
-            end_date = start_date + timedelta(weeks=num_points)
-        elif period == "1 Month":
-            end_date = start_date + pd.DateOffset(months=num_points - 1)
-        elif period == "3 Months":
-            end_date = start_date + pd.DateOffset(months=(num_points - 1)* 3)
-        elif period == "6 Months":
-            end_date = start_date + pd.DateOffset(months=(num_points - 1) * 6)
-        elif period == "1 Year":
-            end_date = start_date + pd.DateOffset(years=num_points - 1)
-        else:
-            end_date = start_date
-
-        date_range = pd.date_range(start=start_date, end=end_date, freq=freq)
-        close_prices = [random.uniform(100, 200) for _ in range(len(date_range))]
-
-        data = {'datetime': date_range, 'close': close_prices}
-        return data
-
+    def fetch_currency_rates(self):
+        c = CurrencyRates()
+        usd_to_eur = c.get_rate('USD', 'EUR')
+        usd_to_gbp = c.get_rate('USD', 'GBP')
+        usd_to_jpy = c.get_rate('USD', 'JPY')
+        self.currency_rates.config(text=f"USD to EUR: {usd_to_eur:.4f}, USD to GBP: {usd_to_gbp:.4f}, USD to JPY: {usd_to_jpy:.4f}")
 
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = BacktestApp(root)
     root.mainloop()
+        
